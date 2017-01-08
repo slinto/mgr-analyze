@@ -1,95 +1,140 @@
 /**
  * node analyze leaf_1.jpg
  */
-var cv = require('opencv');
+const cv = require('opencv');
 
-var GREEN = [0, 255, 0]; // B, G, R
-var WHITE = [255, 255, 255]; // B, G, R
-var RED = [0, 0, 255]; // B, G, R
+/**
+ * CONSTANTS
+ */
+// B,G,R
+const GREEN = [0, 255, 0];
+const WHITE = [255, 255, 255];
+const RED = [0, 0, 255];
 
+const LINE_TYPE = 8;
+const THICKNESS = 3;
 
-let cannyEdge = function(img) {
-  let cannyImg = img.copy();
+/**
+ * Save image with specified name.
+ * @param img
+ * @param name
+ * @param methodName
+ */
+let saveImage = function(img, name, methodName) {
+  img.save(`./img/results/${name}#${methodName}.jpg`);
 };
 
-//
+/**
+ * Checks if array elements lie between the elements of two other arrays.
+ * @param img
+ * @returns {cv.Matrix}
+ */
+let inRange = function (img) {
+  let temp_img = img.copy();
+  let lower_threshold = [200, 200, 200];
+  let upper_threshold = [255, 255, 255];
 
-if (process.argv.slice(2)[0] === undefined) {
-  console.log('Error: chyba nazov suboru.');
-  return true;
-}
+  temp_img.inRange(lower_threshold, upper_threshold);
+  saveImage(temp_img, IMG_NAME_SPLITTED[0], 'inRange');
+  return temp_img;
+};
 
-const IMG_NAME = process.argv.slice(2)[0];
-const IMG_NAME_SPLITTED = IMG_NAME.split('.');
-
-cv.readImage(`./img/${IMG_NAME}`, function (err, im) {
-  if (err) throw err;
-  var width = im.width();
-  var height = im.height();
-  if (width < 1 || height < 1) throw new Error('Image has no size');
-
-  var big = new cv.Matrix(height, width);
-  var poly = new cv.Matrix(height, width);
-  var all = new cv.Matrix(height, width);
-
-  let IMG_ORIGINAL = im.copy();
-
-  let WORKING_IMG = im.copy();
-
-  WORKING_IMG.convertGrayscale();
-  // Pozn: horsie vysledky pri canny edge
-  //im.gaussianBlur([5, 5], 0);
-  im_canny = WORKING_IMG.copy();
-
-  // im.houghLinesP();
-  // im.save(`./img/${IMG_NAME_SPLITTED[0]}-1.5-inRange.${IMG_NAME_SPLITTED[1]}`);
-
-  // ----------------------------------------
-  // IN_RANGE 
-  // B,G,R 
-  var lower_threshold = [200, 200, 200];
-  var upper_threshold = [255, 255, 255];
-  WORKING_IMG.inRange(lower_threshold, upper_threshold);
-  // im.save(`./img/${IMG_NAME_SPLITTED[0]}-1.5-inRange.${IMG_NAME_SPLITTED[1]}`);
-
-  // ----------------------------------------
-  // Vyhladavanie stonky 
-  var imgDilate = WORKING_IMG.copy();
-  var imgBasic = WORKING_IMG.copy();
+/**
+ * Find leaf steam.
+ * TODO: odčítanie 2 obrázkov od seba po dilate+erode
+ * @param img
+ * @returns {cv.Matrix}
+ */
+let findLeafStem = function (img) {
+  var imgDilate = img.copy();
+  var imgBasic = img.copy();
   var imgModified;
 
   var size = imgDilate.size()[0] / 40;
   size = 110;
   var verticalStructure = cv.imgproc.getStructuringElement(1, [size, size]);
 
-  imgDilate.dilate(1, verticalStructure);
-  imgDilate.erode(1, verticalStructure);
+  // imgDilate.dilate(1, verticalStructure);
+  // imgDilate.erode(1, verticalStructure);
 
-  // TODO: odčítanie 2 obrázkov od seba (dilate)
-
-  // imgDilate.save(`./img/${IMG_NAME_SPLITTED[0]}-2-erode.${IMG_NAME_SPLITTED[1]}`);
+  // var verticalStructure = cv.imgproc.getStructuringElement(1, [5, 5]);
+  // imgDilate.dilate(3, verticalStructure);
+  // //
+  // imgDilate.save(`./img/${IMG_NAME_SPLITTED[0]}-2-dilate.${IMG_NAME_SPLITTED[1]}`);
   //
   // imgBasic.subtract(imgDilate);
   //
-  // imgBasic.save(`./img/${IMG_NAME_SPLITTED[0]}-2-erode.${IMG_NAME_SPLITTED[1]}`);
+  // imgBasic.save(`./img/results/${IMG_NAME_SPLITTED[0]}-2-erode.${IMG_NAME_SPLITTED[1]}`);
+
+  //return img;
+};
+
+/**
+ * Return new rotated image without crop.
+ * @param img
+ * @param contours
+ * @param index
+ * @returns {cv.Matrix}
+ */
+let rotateWithoutCrop = function (img, contours, index) {
+  let temp_img = img.copy();
+  let rect = contours.minAreaRect(index);
+  let diagonal = Math.round(Math.sqrt(Math.pow(temp_img.size()[1], 2) + Math.pow(temp_img.size()[0], 2)));
+  let bgImg = new cv.Matrix(diagonal, diagonal, cv.Constants.CV_8UC3, [255, 255, 255]);
+  let offsetX = (diagonal - temp_img.size()[1]) / 2;
+  let offsetY = (diagonal - temp_img.size()[0]) / 2;
+
+  temp_img.copyTo(bgImg, offsetX, offsetY);
+  bgImg.rotate(rect.angle + 90);
+  saveImage(bgImg, IMG_NAME_SPLITTED[0], 'rotateWithoutCrop');
+
+  return bgImg;
+};
+
+// ----------------------------------------
+// Initialize
+if (process.argv.slice(2)[0] === undefined) {
+  console.log('Error: missing file name.');
+  return true;
+}
+
+const IMG_NAME = process.argv.slice(2)[0];
+const IMG_NAME_SPLITTED = IMG_NAME.split('.');
+
+cv.readImage(`./img/${IMG_NAME}`, function (err, img) {
+  if (err) throw err;
+  let width = img.width();
+  let height = img.height();
+  if (width < 1 || height < 1) throw new Error('Image has no size.');
+
+  let allContoursImg = new cv.Matrix(height, width);
+  let bigContoursImg = new cv.Matrix(height, width);
+
+  let WORKING_IMG = img.copy();
+  let CANNY_IMG;
+
+  WORKING_IMG.convertGrayscale();
+  WORKING_IMG.gaussianBlur([1, 1]);
+  CANNY_IMG = WORKING_IMG.copy();
 
 
   // ----------------------------------------
-  // CANNY EDGE
+  inRange(WORKING_IMG);
+  findLeafStem(WORKING_IMG);
+
+
+  // ----------------------------------------
+  // Canny edge detector & print contours
   var lowThresh = 0;
   var highThresh = 100;
-  var nIters = 4;
-  var maxArea = 2500;
+  var nIters = 1;
 
-  im_canny.canny(lowThresh, highThresh);
-  im_canny.dilate(nIters);
+  CANNY_IMG.canny(lowThresh, highThresh);
+  CANNY_IMG.dilate(nIters);
 
-  contours = im_canny.findContours();
-  const lineType = 8;
-  const maxLevel = 0;
-  const thickness = 3;
   let largestArea = 0;
   let largestAreaIndex = 0;
+  let contours = CANNY_IMG.findContours();
 
   for (let i = 0; i < contours.size(); i++) {
     if (contours.area(i) > largestArea) {
@@ -98,77 +143,49 @@ cv.readImage(`./img/${IMG_NAME}`, function (err, im) {
     }
   }
 
-  // Otočenie obrázku podla polohy obdlznika!
+  allContoursImg.drawAllContours(contours, WHITE);
+  bigContoursImg.drawContour(contours, largestAreaIndex, GREEN, THICKNESS, LINE_TYPE);
+
+  // Draw rectangle around contour.
   let rect = contours.minAreaRect(largestAreaIndex);
-  let diagonal = Math.round(Math.sqrt(Math.pow(im.size()[1], 2) + Math.pow(im.size()[0], 2)));
+  for (let i = 0; i < 4; i++) {
+    bigContoursImg.line([rect.points[i].x, rect.points[i].y], [rect.points[(i+1)%4].x, rect.points[(i+1)%4].y], RED, 3);
+  }
 
-  cv.readImage(`./img/leaf_bg.jpg`, function (err, bgImg) {
-    bgImg.resize(diagonal, diagonal);
-
-    let offsetX = (diagonal - im.size()[1]) / 2;
-    let offsetY = (diagonal - im.size()[0]) / 2;
-
-    IMG_ORIGINAL.copyTo(bgImg, offsetX, offsetY);
-    bgImg.rotate(rect.angle + 90);
-
-    bgImg.save(`./img/${IMG_NAME_SPLITTED[0]}-X-rotated.${IMG_NAME_SPLITTED[1]}`);
-
-    var rotatedContour = new cv.Matrix(diagonal, diagonal);
-    let rotatedCanny = bgImg.copy();
-    rotatedCanny.canny(lowThresh, highThresh);
-    rotatedCanny.dilate(nIters);
-
-    contours = rotatedCanny.findContours();
-    const lineType = 8;
-    const maxLevel = 0;
-    const thickness = 3;
-    let largestArea = 0;
-    let largestAreaIndex = 0;
-
-    for (let i = 0; i < contours.size(); i++) {
-      if (contours.area(i) > largestArea) {
-        largestArea = contours.area(i);
-        largestAreaIndex = i;
-      }
-    }
-    var moments = contours.moments(largestAreaIndex);
-    var cgx = Math.round(moments.m10 / moments.m00);
-    var cgy = Math.round(moments.m01 / moments.m00);
-
-    rotatedContour.drawContour(contours, largestAreaIndex, GREEN, thickness, lineType, maxLevel, [0, 0]);
-    rotatedContour.line([cgx - 5, cgy], [cgx + 5, cgy], RED);
-    rotatedContour.line([cgx, cgy - 5], [cgx, cgy + 5], RED);
-    // rotatedContour.rotate(rect.angle + 90);
-    rotatedContour.save(`./img/${IMG_NAME_SPLITTED[0]}-X-rotatedContour.${IMG_NAME_SPLITTED[1]}`);
+  saveImage(bigContoursImg, IMG_NAME_SPLITTED[0], 'drawBiggestContour');
+  saveImage(allContoursImg, IMG_NAME_SPLITTED[0], 'allContours');
 
 
-  });
-
-  // DRAW BIGGEST CONTOUR
-  var moments = contours.moments(largestAreaIndex);
-  var cgx = Math.round(moments.m10 / moments.m00);
-  var cgy = Math.round(moments.m01 / moments.m00);
-  big.drawContour(contours, largestAreaIndex, GREEN, thickness, lineType, maxLevel, [0, 0]);
-  big.line([cgx - 5, cgy], [cgx + 5, cgy], RED);
-  big.line([cgx, cgy - 5], [cgx, cgy + 5], RED);
-
-  // APPROX POLYGON
+  //------------------------------------------------------------
+  // Polygon approximation
+  let polyApproxImage = new cv.Matrix(height, width);
   let arcLength = contours.arcLength(largestAreaIndex, true);
-  // contours.approxPolyDP(largestAreaIndex, 0.01 * arcLength, true);
-  // contours.approxPolyDP(largestAreaIndex, arcLength * 0.05, true);
-
-  // RECTANGLE around contour
-  var bound = contours.boundingRect(largestAreaIndex);
-  big.rectangle([bound.x, bound.y], [bound.width, bound.height], WHITE, 2);
+  contours.approxPolyDP(largestAreaIndex, 0.01 * arcLength, true);
+  contours.approxPolyDP(largestAreaIndex, arcLength * 0.05, true);
+  polyApproxImage.drawContour(contours, largestAreaIndex, RED, 2);
+  saveImage(polyApproxImage, IMG_NAME_SPLITTED[0], 'approxPolyDP');
 
 
-  poly.drawContour(contours, largestAreaIndex, RED);
+  //------------------------------------------------------------
+  // Rotate image without cropping it
+  let bgImg = rotateWithoutCrop(img, contours, largestAreaIndex);
 
 
-  // FINAL PRINT
-  all.drawAllContours(contours, WHITE);
+  //------------------------------------------------------------
+  // Canny edge detector on rotated image
+  let diagonal = Math.round(Math.sqrt(Math.pow(img.size()[1], 2) + Math.pow(img.size()[0], 2)));
+  let rotatedContour = new cv.Matrix(diagonal, diagonal);
+  bgImg.canny(lowThresh, highThresh);
+  bgImg.dilate(nIters);
+  contours = bgImg.findContours();
 
-  big.save(`./img/${IMG_NAME_SPLITTED[0]}-X-final.${IMG_NAME_SPLITTED[1]}`);
-  poly.save(`./img/${IMG_NAME_SPLITTED[0]}-X-poly.${IMG_NAME_SPLITTED[1]}`);
-  //all.save(`./img/ALL_2${IMG_NAME}`);   console.log(`Img ${IMG_NAME} saved.`);
+  for (let i = 0; i < contours.size(); i++) {
+    if (contours.area(i) > largestArea) {
+      largestArea = contours.area(i);
+      largestAreaIndex = i;
+    }
+  }
+
+  rotatedContour.drawContour(contours, largestAreaIndex, GREEN, THICKNESS, LINE_TYPE);
+  saveImage(rotatedContour, IMG_NAME_SPLITTED[0], 'rotateWithoutCropContour');
 });
