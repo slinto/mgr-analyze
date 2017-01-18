@@ -2,6 +2,7 @@
  * node analyze leaf_1.jpg
  */
 const cv = require('opencv');
+const pixelmatch = require('pixelmatch');
 
 /**
  * CONSTANTS
@@ -20,7 +21,7 @@ const THICKNESS = 3;
  * @param name
  * @param methodName
  */
-let saveImage = function(img, name, methodName) {
+let saveImage = function (img, name, methodName) {
   img.save(`./img/results/${name}#${methodName}.jpg`);
 };
 
@@ -46,16 +47,42 @@ let inRange = function (img) {
  * @returns {cv.Matrix}
  */
 let findLeafStem = function (img) {
-  var imgDilate = img.copy();
+  var imgWithoutStem = img.copy();
   var imgBasic = img.copy();
-  var imgModified;
+  var imgModified = new cv.Matrix(imgWithoutStem.height(), imgWithoutStem.width());
 
-  var size = imgDilate.size()[0] / 40;
-  size = 110;
-  var verticalStructure = cv.imgproc.getStructuringElement(1, [size, size]);
+  var size = imgWithoutStem.size()[0] / 50;
+  var verticalStructure = cv.imgproc.getStructuringElement(1, [3, 3]);
+  imgWithoutStem.dilate(45, verticalStructure);
+  imgWithoutStem.erode(45, verticalStructure);
 
-  // imgDilate.dilate(1, verticalStructure);
-  // imgDilate.erode(1, verticalStructure);
+  // imgBasic.erode(1, verticalStructure);
+
+  saveImage(imgWithoutStem, IMG_NAME_SPLITTED[0], 'findLeafStem_imgWithoutStem');
+
+  // console.log(imgWithoutStem.width())
+  // console.log(imgWithoutStem.height())
+  // console.log(imgWithoutStem.getData());
+
+  let diff = new cv.Matrix(imgWithoutStem.height(), imgWithoutStem.width());
+  diff.absDiff(imgWithoutStem, imgBasic);
+  diff.threshold(80, 255, 'Binary');
+  diff.erode(10, verticalStructure);
+
+  saveImage(diff, IMG_NAME_SPLITTED[0], 'findLeafStem_diff');
+
+
+  // var mat = new cv.Matrix(256, 256, cv.Constants.CV_8UC3);
+  // var buf = Buffer(256 * 256);
+  // buf.fill(0);
+  //
+  //
+  // for (var i = 0; i < 256 * 256; i++) {
+  //   buf[i] = (i % 2 === 1) ? 230 : 0;
+  // }
+  //
+  // mat.put(buf);
+  // saveImage(mat, IMG_NAME_SPLITTED[0], 'findLeafStem_MAT');
 
   // var verticalStructure = cv.imgproc.getStructuringElement(1, [5, 5]);
   // imgDilate.dilate(3, verticalStructure);
@@ -78,11 +105,15 @@ let findLeafStem = function (img) {
  */
 let rotateWithoutCrop = function (img, contours, index) {
   let temp_img = img.copy();
+
   let rect = contours.minAreaRect(index);
+
   let diagonal = Math.round(Math.sqrt(Math.pow(temp_img.size()[1], 2) + Math.pow(temp_img.size()[0], 2)));
   let bgImg = new cv.Matrix(diagonal, diagonal, cv.Constants.CV_8UC3, [255, 255, 255]);
   let offsetX = (diagonal - temp_img.size()[1]) / 2;
   let offsetY = (diagonal - temp_img.size()[0]) / 2;
+
+  console.log(rect.angle);
 
   temp_img.copyTo(bgImg, offsetX, offsetY);
   bgImg.rotate(rect.angle + 90);
@@ -149,7 +180,7 @@ cv.readImage(`./img/${IMG_NAME}`, function (err, img) {
   // Draw rectangle around contour.
   let rect = contours.minAreaRect(largestAreaIndex);
   for (let i = 0; i < 4; i++) {
-    bigContoursImg.line([rect.points[i].x, rect.points[i].y], [rect.points[(i+1)%4].x, rect.points[(i+1)%4].y], RED, 3);
+    bigContoursImg.line([rect.points[i].x, rect.points[i].y], [rect.points[(i + 1) % 4].x, rect.points[(i + 1) % 4].y], RED, 3);
   }
 
   saveImage(bigContoursImg, IMG_NAME_SPLITTED[0], 'drawBiggestContour');
